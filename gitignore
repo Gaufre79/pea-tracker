@@ -1,0 +1,10 @@
+# Données personnelles : ne jamais publier
+data.json
+data.json.tmp
+
+# Python
+__pycache__/
+*.pyc
+
+# Système
+.DS_Store
