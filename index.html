@@ -10,12 +10,12 @@
 <style>
 :root{color-scheme:light;--paper:#F3F1E7;--white:#FFFEFA;--ink:#130f40;--muted:#6e6c8f;--apple:#badc58;--on-apple:#130f40;--soft:#E7E4D6;--coral:#eb4d4b;--up:#6ab04c;--r:28px;
 --pill-bg:#130f40;--pill-fg:#badc58;--tile2-bg:#6ab04c;--tile2-fg:#130f40;--tile2-acc:#130f40;
---line-val:#6ab04c;--line-inv:#130f40;--area:rgba(106,176,76,.2);
+--line-val:#6ab04c;--line-inv:#130f40;--area:rgba(106,176,76,.2);--area-neg:rgba(235,77,75,.18);
 --chip-bg:#badc58;--chip-fg:#130f40;--chip-nbg:#eb4d4b;--chip-nfg:#fff;
 --tip-bg:#130f40;--tip-fg:#F3F1E7;--tip-acc:#badc58;--warn-bg:#badc58;--warn-fg:#130f40;--shade:rgba(19,15,64,.55)}
 :root[data-theme="dark"]{color-scheme:dark;--paper:#130f40;--white:#30336b;--ink:#dff9fb;--muted:#a3a7d6;--apple:#badc58;--on-apple:#130f40;--soft:rgba(223,249,251,.12);--coral:#ff7979;--up:#badc58;
 --pill-bg:#130f40;--pill-fg:#badc58;--tile2-bg:#6ab04c;--tile2-fg:#130f40;--tile2-acc:#130f40;
---line-val:#badc58;--line-inv:#dff9fb;--area:rgba(186,220,88,.16);
+--line-val:#badc58;--line-inv:#dff9fb;--area:rgba(186,220,88,.16);--area-neg:rgba(255,121,121,.16);
 --chip-bg:#badc58;--chip-fg:#130f40;--chip-nbg:#ff7979;--chip-nfg:#130f40;
 --tip-bg:#130f40;--tip-fg:#dff9fb;--tip-acc:#badc58;--warn-bg:#badc58;--warn-fg:#130f40;--shade:rgba(8,6,32,.7)}
 *{box-sizing:border-box;margin:0}
@@ -35,6 +35,10 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:-.03em;line-height:1}
 .btn{padding:13px 22px;border-radius:99px;font-weight:600;background:var(--ink);color:var(--paper)}
 .btn.apple{background:var(--apple);color:var(--on-apple)}
 .btn.ghost{background:var(--soft);color:var(--ink)}
+.nm{display:flex;align-items:center;gap:4px}
+.edit{background:transparent;width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+.edit:hover{background:var(--paper);color:var(--ink)}
+.edit svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .btn.danger{background:var(--coral);color:var(--chip-nfg)}
 .delInfo{background:var(--paper);border-radius:18px;padding:16px 18px}
 .delInfo small{display:block;margin-top:4px;color:var(--muted);font-size:.85rem;line-height:1.5}
@@ -60,7 +64,7 @@ h2{font-size:1.2rem;font-weight:800;letter-spacing:-.02em}
 .ranges button.on{background:var(--apple);color:var(--on-apple)}
 .legendC{display:flex;gap:20px;font-size:.88rem;font-weight:600;margin-bottom:6px;flex-wrap:wrap}
 .legendC i{display:inline-block;width:18px;height:5px;border-radius:3px;margin-right:8px;vertical-align:middle}
-.legendC i.v{background:var(--line-val)} .legendC i.n{background:var(--line-inv)}
+.legendC i.v{background:linear-gradient(90deg,var(--line-val) 50%,var(--coral) 50%)} .legendC i.n{background:var(--line-inv)}
 #chart{position:relative;height:320px}
 #chart svg{display:block;width:100%;height:320px;touch-action:none}
 #chart text{font:600 11px "Bricolage Grotesque",sans-serif;fill:var(--muted)}
@@ -138,6 +142,18 @@ input:focus,select:focus{outline:3px solid var(--apple)}
   </form>
 </dialog>
 
+<dialog id="renDlg">
+  <form id="renForm">
+    <h2>Renommer l’ETF</h2>
+    <label>Nouveau nom<input id="renInput" maxlength="80" required></label>
+    <p class="hint" id="renHint" style="margin:0 0 20px"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button type="button" class="btn ghost" id="renNo">Annuler</button>
+      <button class="btn apple" type="submit">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="delDlg">
   <h2>Supprimer cet achat ?</h2>
   <div class="delInfo" id="delInfo"></div>
@@ -196,15 +212,28 @@ function drawChart(){
   const all = s.flatMap(p=>[p.val,p.inv]); let lo = Math.min(...all), hi = Math.max(...all);
   const pad = (hi-lo || hi*.1 || 1)*.15; lo = Math.max(0, lo-pad); hi += pad;
   const x = i => m.l + (W-m.l-m.r)*i/(n-1), y = v => m.t + (H-m.t-m.b)*(1-(v-lo)/(hi-lo));
+  const segs = []; let cur = {pos:s[0].val>=s[0].inv, pts:[[0,s[0].val]]};
+  for(let i=1;i<n;i++){
+    const a=s[i-1], b=s[i], pa=a.val>=a.inv, pb=b.val>=b.inv;
+    if(pa!==pb){
+      const da=a.val-a.inv, db=b.val-b.inv, t=da/(da-db), xi=i-1+t, yv=a.val+(b.val-a.val)*t;
+      cur.pts.push([xi,yv]); segs.push(cur); cur={pos:pb, pts:[[xi,yv]]};
+    }
+    cur.pts.push([i,b.val]);
+  }
+  segs.push(cur);
+  const sp = g => g.pts.map((q,k)=>(k?"L":"M")+x(q[0]).toFixed(1)+" "+y(q[1]).toFixed(1)).join("");
+  const areas = segs.map(g=>`<path d="${sp(g)}L${x(g.pts[g.pts.length-1][0])} ${H-m.b}L${x(g.pts[0][0])} ${H-m.b}Z" style="fill:var(${g.pos?"--area":"--area-neg"})"/>`).join("");
+  const lines = segs.map(g=>`<path d="${sp(g)}" fill="none" style="stroke:var(${g.pos?"--line-val":"--coral"})" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>`).join("");
   const path = k => s.map((p,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(p[k]).toFixed(1)).join("");
   const grid = [0,1,2,3].map(i=>{ const v = lo+(hi-lo)*i/3;
     return `<line class="g" x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${m.l-12}" y="${y(v)+4}" text-anchor="end">${Math.round(v).toLocaleString("fr-FR")} €</text>`; }).join("");
   const fmt = d => new Date(d).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"2-digit"});
   const xl = [[0,"start"],[Math.round((n-1)/2),"middle"],[n-1,"end"]].map(([i,a])=>`<text x="${x(i)}" y="${H-8}" text-anchor="${a}">${fmt(s[i].d)}</text>`).join("");
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${grid}${xl}
-    <path d="${path("val")}L${x(n-1)} ${H-m.b}L${x(0)} ${H-m.b}Z" style="fill:var(--area)"/>
+    ${areas}
     <path d="${path("inv")}" fill="none" style="stroke:var(--line-inv)" stroke-width="3" stroke-dasharray="2 7" stroke-linecap="round"/>
-    <path d="${path("val")}" fill="none" style="stroke:var(--line-val)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+    ${lines}
     <line id="cl" y1="${m.t}" y2="${H-m.b}" style="stroke:var(--line-val)" stroke-width="2" opacity="0"/>
     <circle id="cd" r="8" style="fill:var(--white);stroke:var(--line-val)" stroke-width="4" opacity="0"/></svg><div class="tip" id="tip"></div>`;
   const svg = box.querySelector("svg"), tip = $("#tip");
@@ -213,8 +242,8 @@ function drawChart(){
     const i = Math.max(0, Math.min(n-1, Math.round((e.clientX-r.left-m.l)/(W-m.l-m.r)*(n-1))));
     const p = s[i], g = p.val-p.inv;
     $("#cl").setAttribute("x1",x(i)); $("#cl").setAttribute("x2",x(i)); $("#cl").setAttribute("opacity",1);
-    $("#cd").setAttribute("cx",x(i)); $("#cd").setAttribute("cy",y(p.val)); $("#cd").setAttribute("opacity",1);
-    tip.innerHTML = `${fmt(p.d)}<br>Valeur <b>${eur(p.val)}</b><br>Investi ${eur(p.inv)}<br>Gain <b>${sgn(g)}</b> (${pct(p.inv?g/p.inv*100:0)})`;
+    $("#cd").setAttribute("cx",x(i)); $("#cd").setAttribute("cy",y(p.val)); $("#cd").setAttribute("opacity",1); $("#cd").style.stroke = $("#cl").style.stroke = g>=0 ? "var(--line-val)" : "var(--coral)";
+    tip.innerHTML = `${fmt(p.d)}<br>Valeur <b>${eur(p.val)}</b><br>Investi ${eur(p.inv)}<br>Gain <b style="color:${g<0?"var(--coral)":"var(--tip-acc)"}">${sgn(g)}</b> (${pct(p.inv?g/p.inv*100:0)})`;
     tip.style.display = "block";
     tip.style.left = Math.min(Math.max(x(i)+14, 0), W-tip.offsetWidth)+"px";
   };
@@ -267,7 +296,7 @@ function render(d){
     <section class="tile lines"><h2>Mes achats</h2><div class="scroll"><table>
       <thead><tr><th>ETF</th><th>Quantité</th><th>Prix d’achat</th><th>Cours actuel</th><th>Valeur</th><th>Gain</th><th></th></tr></thead>
       <tbody>${lots.map(l=>`<tr>
-        <td><b>${esc(l.name)}</b><small>${esc(l.ticker)}${l.date?" · "+new Date(l.date).toLocaleDateString("fr-FR"):""}</small></td>
+        <td><div class="nm"><b>${esc(l.name)}</b><button class="edit" title="Renommer" aria-label="Renommer cet ETF" onclick="renameEtf('${esc(l.ticker)}')"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg></button></div><small>${esc(l.ticker)}${l.date?" · "+new Date(l.date).toLocaleDateString("fr-FR"):""}</small></td>
         <td>${String(l.qty).replace(".",",")}</td>
         <td>${eur(l.buy)}${l.fees?`<small>+ ${eur(l.fees)} de frais</small>`:""}</td>
         <td>${l.px!=null?eur(l.px):"—"}</td><td><b>${l.val!=null?eur(l.val):"—"}</b></td>
@@ -294,6 +323,21 @@ function openDlg(){
   $("#dlg").showModal();
 }
 $("#known").onchange = syncEtf;
+let REN = null;
+function renameEtf(ticker){
+  const p = LAST && LAST.positions.find(x=>x.ticker===ticker); if(!p) return;
+  REN = ticker;
+  $("#renInput").value = p.name;
+  $("#renHint").textContent = ticker + " · le nouveau nom s’applique à tous les achats de cet ETF";
+  $("#renDlg").showModal();
+  $("#renInput").select();
+}
+$("#renNo").onclick = () => $("#renDlg").close();
+$("#renForm").onsubmit = async e => {
+  e.preventDefault();
+  try{ const d = await api("/api/rename",{method:"POST",body:JSON.stringify({ticker:REN,name:$("#renInput").value})}); $("#renDlg").close(); render(d); }
+  catch(err){ alert(err.message); }
+};
 let DEL = null;
 function del(id){
   const p = LAST && LAST.positions.find(x=>x.id===id); if(!p) return;

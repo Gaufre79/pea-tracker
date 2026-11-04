@@ -125,6 +125,16 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/refresh":
                 refresh(d)
                 return self.send_json(d)
+            if self.path == "/api/rename":
+                name = str(data.get("name", "")).strip()[:80]
+                ticker = str(data.get("ticker", "")).strip().upper()
+                if not name or not any(p["ticker"] == ticker for p in d["positions"]):
+                    return self.send_json({"error": "Nom ou ETF invalide"}, 400)
+                for p in d["positions"]:
+                    if p["ticker"] == ticker:
+                        p["name"] = name
+                save(d)
+                return self.send_json(d)
             if self.path == "/api/positions":
                 try:
                     p = {
