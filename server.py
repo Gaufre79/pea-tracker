@@ -52,6 +52,11 @@ def fetch_price(ticker, since=None):
             hist = [[datetime.fromtimestamp(t, timezone.utc).date().isoformat(), round(c, 4)]
                     for t, c in zip(res.get("timestamp") or [], closes) if c is not None]
             price = meta.get("regularMarketPrice") or (hist[-1][1] if hist else None)
+            rt = meta.get("regularMarketTime")  # le dernier cours peut être plus récent que l'historique
+            if rt and price:
+                day = datetime.fromtimestamp(rt, timezone.utc).date().isoformat()
+                if not hist or day > hist[-1][0]:
+                    hist.append([day, round(float(price), 4)])
             return {"price": float(price), "currency": meta.get("currency", "EUR")}, hist
         except Exception as e:
             last = e
@@ -79,11 +84,16 @@ def refresh(d, only=None):
 
 
 def current():
-    """Données à jour : actualise les cours au premier accès de la journée."""
+    """Données à jour : actualise au premier accès de la journée, et réessaie
+    (au plus toutes les 10 min) si la dernière tentative a échoué."""
     d = load()
-    today = datetime.now().date().isoformat()
-    missing = any(p["ticker"] not in d.get("history", {}) for p in d["positions"])
-    if d["positions"] and ((d["updated"] or "")[:10] != today or missing):
+    now = datetime.now()
+    try:
+        age = (now - datetime.fromisoformat(d["updated"])).total_seconds()
+    except Exception:
+        age = 1e9
+    failed = bool(d.get("errors")) or any(p["ticker"] not in d.get("history", {}) for p in d["positions"])
+    if d["positions"] and ((d["updated"] or "")[:10] != now.date().isoformat() or (failed and age > 600)):
         refresh(d)
     return d
 
