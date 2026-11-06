@@ -71,7 +71,10 @@ def refresh(d, only=None):
         try:
             dates = [p["date"] for p in d["positions"] if p["ticker"] == t and p.get("date")]
             d["prices"][t], hist = fetch_price(t, min(dates) if dates else None)
-            d.setdefault("history", {})[t] = hist
+            # fusion : on garde les jours déjà connus que Yahoo ne renvoie pas (ou pas encore)
+            merged = {day: c for day, c in d.setdefault("history", {}).get(t, [])}
+            merged.update({day: c for day, c in hist})
+            d["history"][t] = [[day, merged[day]] for day in sorted(merged)]
         except Exception as e:
             errors.append(t)
             details[t] = f"{type(e).__name__}: {e}"

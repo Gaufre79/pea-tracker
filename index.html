@@ -182,12 +182,20 @@ async function api(path, opts){
 }
 
 function series(lots, hist){
-  const dates = new Set();
-  Object.values(hist).forEach(h => h.forEach(([d]) => dates.add(d)));
-  const sorted = [...dates].sort();
-  const first = lots.map(l=>l.date).filter(Boolean).sort()[0] || sorted[0];
+  const known = [];
+  Object.values(hist).forEach(h => h.forEach(([d]) => known.push(d)));
+  known.sort();
+  if(!known.length) return [];
+  const first = lots.map(l=>l.date).filter(Boolean).sort()[0] || known[0];
+  const end = known[known.length-1];
+  // un point par jour ouvré (lundi à vendredi) : un jour sans cours reprend le dernier cours connu
+  const days = [];
+  for(let t = Date.parse(first+"T00:00:00Z"), stop = Date.parse(end+"T00:00:00Z"); t <= stop; t += 864e5){
+    const dt = new Date(t), wd = dt.getUTCDay();
+    if(wd !== 0 && wd !== 6) days.push(dt.toISOString().slice(0,10));
+  }
   const ptr = {}, last = {}, out = [];
-  for(const d of sorted.filter(d => d >= first)){
+  for(const d of days){
     for(const t in hist){
       let i = ptr[t] || 0;
       while(i < hist[t].length && hist[t][i][0] <= d){ last[t] = hist[t][i][1]; i++; }
