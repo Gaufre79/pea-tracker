@@ -59,9 +59,14 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:-.03em;line-height:1}
 .chartTile{grid-column:span 12}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 h2{font-size:1.2rem;font-weight:800;letter-spacing:-.02em}
-.ranges{display:flex;gap:6px;background:var(--paper);padding:5px;border-radius:99px}
-.ranges button{background:transparent;padding:7px 15px;border-radius:99px;font-weight:600;font-size:.88rem}
+.ranges{display:flex;gap:4px;background:var(--paper);padding:5px;border-radius:99px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.ranges::-webkit-scrollbar{display:none}
+.ranges button{background:transparent;padding:7px 14px;border-radius:99px;font-weight:600;font-size:.88rem;white-space:nowrap;flex:none}
 .ranges button.on{background:var(--apple);color:var(--on-apple)}
+.custom{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 14px}
+.custom[hidden]{display:none}
+.custom label{display:flex;align-items:center;gap:8px;margin:0;color:var(--ink);font-size:.9rem}
+.custom input{width:auto;margin:0;padding:9px 14px}
 .legendC{display:flex;gap:20px;font-size:.88rem;font-weight:600;margin-bottom:6px;flex-wrap:wrap}
 .legendC i{display:inline-block;width:18px;height:5px;border-radius:3px;margin-right:8px;vertical-align:middle}
 .legendC i.v{background:linear-gradient(90deg,var(--line-val) 50%,var(--coral) 50%)} .legendC i.n{background:var(--line-inv)}
@@ -173,7 +178,9 @@ const cls = n => n>=0?"up":"down";
 const esc = s => s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const PALETTES = {light:["#6ab04c","#badc58","#130f40","#30336b","#22a6b3","#7ed6df"],dark:["#badc58","#6ab04c","#dff9fb","#7ed6df","#22a6b3","#c7ecee"]};
 const theme = () => document.documentElement.dataset.theme;
-let RANGE = "Tout", SER = [], KNOWN = [], LAST = null;
+let RANGE = "Tout", SER = [], KNOWN = [], LAST = null, CUSTOM = {from:"", to:""};
+const DAYS = {"1S":7,"1M":30,"3M":91,"6M":182,"1A":365,"3A":1095,"5A":1825};
+const RANGES = ["1S","1M","3M","6M","1A","3A","5A","Tout","Période"];
 
 async function api(path, opts){
   const r = await fetch(path, opts && {...opts, headers:{"Content-Type":"application/json"}});
@@ -213,9 +220,14 @@ function series(lots, hist){
 function drawChart(){
   const box = $("#chart"); if(!box) return;
   if(SER.length < 2){ box.innerHTML = `<p style="padding:90px 0;text-align:center;color:var(--muted);font-weight:600">L’historique apparaîtra dès qu’il y aura au moins deux jours de cours.</p>`; return; }
-  const days = {"1M":30,"3M":91,"6M":182,"1A":365}[RANGE];
   let s = SER;
-  if(days){ const c = new Date(Date.now()-days*864e5).toISOString().slice(0,10); s = SER.filter(p=>p.d>=c); if(s.length<2) s = SER.slice(-2); }
+  if(RANGE === "Période"){
+    s = SER.filter(p => p.d >= CUSTOM.from && p.d <= CUSTOM.to);
+    if(s.length < 2){ box.innerHTML = `<p style="padding:90px 0;text-align:center;color:var(--muted);font-weight:600">Choisis une période d’au moins deux jours ouvrés (du lundi au vendredi).</p>`; return; }
+  } else if(DAYS[RANGE]){
+    const c = new Date(Date.now()-DAYS[RANGE]*864e5).toISOString().slice(0,10);
+    s = SER.filter(p=>p.d>=c); if(s.length<2) s = SER.slice(-2);
+  }
   const W = box.clientWidth, H = 320, m = {l:70,r:14,t:14,b:30}, n = s.length;
   const all = s.flatMap(p=>[p.val,p.inv]); let lo = Math.min(...all), hi = Math.max(...all);
   const pad = (hi-lo || hi*.1 || 1)*.15; lo = Math.max(0, lo-pad); hi += pad;
@@ -283,6 +295,12 @@ function render(d){
   const byT = {}; priced.forEach(l=>{ (byT[l.ticker] ||= {name:l.name,val:0}).val += l.val; });
   const alloc = Object.entries(byT).sort((a,b)=>b[1].val-a[1].val);
   SER = series(priced, d.history || {});
+  const lo = SER.length ? SER[0].d : "", hi = SER.length ? SER[SER.length-1].d : "";
+  if(SER.length){
+    const month = new Date(Date.parse(hi+"T00:00:00Z") - 30*864e5).toISOString().slice(0,10);
+    if(!CUSTOM.from || CUSTOM.from < lo || CUSTOM.from > hi) CUSTOM.from = month > lo ? month : lo;
+    if(!CUSTOM.to || CUSTOM.to > hi || CUSTOM.to < lo) CUSTOM.to = hi;
+  }
 
   $("#main").innerHTML = `<div class="grid">
     <section class="tile hero">
@@ -294,7 +312,11 @@ function render(d){
     </section>
     <section class="tile chartTile">
       <div class="top"><h2>Évolution</h2>
-        <div class="ranges">${["1M","3M","6M","1A","Tout"].map(r=>`<button data-r="${r}" class="${r===RANGE?"on":""}">${r}</button>`).join("")}</div></div>
+        <div class="ranges">${RANGES.map(r=>`<button data-r="${r}" class="${r===RANGE?"on":""}">${r}</button>`).join("")}</div></div>
+      <div class="custom" id="custom" ${RANGE==="Période"?"":"hidden"}>
+        <label>Du <input type="date" id="cFrom" value="${CUSTOM.from}" min="${lo}" max="${hi}"></label>
+        <label>au <input type="date" id="cTo" value="${CUSTOM.to}" min="${lo}" max="${hi}"></label>
+      </div>
       <div class="legendC"><span><i class="v"></i>Valeur du portefeuille</span><span><i class="n"></i>Somme investie</span></div>
       <div id="chart"></div>
     </section>
@@ -374,6 +396,15 @@ document.addEventListener("click", e => {
   const b = e.target.closest("[data-r]"); if(!b) return;
   RANGE = b.dataset.r;
   document.querySelectorAll("[data-r]").forEach(x=>x.classList.toggle("on", x===b));
+  $("#custom").hidden = RANGE !== "Période";
+  drawChart();
+});
+document.addEventListener("change", e => {
+  if(e.target.id !== "cFrom" && e.target.id !== "cTo") return;
+  let a = $("#cFrom").value || CUSTOM.from, z = $("#cTo").value || CUSTOM.to;
+  if(a > z){ if(e.target.id === "cFrom") z = a; else a = z; }
+  $("#cFrom").value = a; $("#cTo").value = z;
+  CUSTOM = {from:a, to:z};
   drawChart();
 });
 addEventListener("resize", drawChart);
